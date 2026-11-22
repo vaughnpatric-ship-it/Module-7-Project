@@ -1,43 +1,97 @@
+
 import streamlit as st
+import pandas as pd
 import requests
-import json
 
-st.set_page_config(page_title='SuperKart Sales Predictor', layout='centered')
-st.title('🛒 SuperKart Sales Predictor')
-st.write('Predict total store sales using product and store features.')
+# Base URL of the Flask backend
+BACKEND_URL = "http://backend:7860"
 
-# User Inputs
-product_weight = st.number_input('Product Weight', min_value=0.0, value=12.5)
-sugar_content = st.selectbox('Sugar Content', ['Low Sugar', 'Regular', 'No Sugar'])
-allocated_area = st.number_input('Product Allocated Area Ratio', min_value=0.0, max_value=1.0, value=0.06)
-mrp = st.number_input('Product MRP ($)', min_value=0.0, value=150.0)
-store_size = st.selectbox('Store Size', ['Small', 'Medium', 'High'])
-city_type = st.selectbox('City Type', ['Tier 1', 'Tier 2', 'Tier 3'])
-store_type = st.selectbox('Store Type', ['Food Mart', 'Departmental Store', 'Supermarket Type1', 'Supermarket Type2'])
-product_id_char = st.selectbox('Product ID Prefix', ['FD', 'NC', 'DR'])
-store_age = st.number_input('Store Age (Years)', min_value=1, value=15)
-product_cat = st.selectbox('Product Category', ['Perishables', 'Non Perishables'])
+# Page title
+st.title("SuperKart System")
+st.write(
+    "Enter the product and store details below to predict the total sales."
+)
 
-if st.button('🔮 Predict Store Sales'):
-    payload = {
-        'Product_Weight': product_weight,
-        'Product_Sugar_Content': sugar_content,
-        'Product_Allocated_Area': allocated_area,
-        'Product_MRP': mrp,
-        'Store_Size': store_size,
-        'Store_Location_City_Type': city_type,
-        'Store_Type': store_type,
-        'Product_Id_char': product_id_char,
-        'Store_Age_Years': int(store_age),
-        'Product_Type_Category': product_cat
-    }
-    
-    try:
-        response = requests.post('http://backend:8000/predict', json=payload)
+# Input fields for product and store data
+Product_Weight = st.number_input("Product Weight", min_value=0.0, value=12.66)
+Product_Sugar_Content = st.selectbox("Product Sugar Content", ["Low Sugar", "Regular", "No Sugar"])
+Product_Allocated_Area = st.number_input("Product Allocated Area", min_value=0.0, value=0.027)
+Product_MRP = st.number_input("Product MRP", min_value=0.0, value=117.08)
+Store_Size = st.selectbox("Store Size", ["Small", "Medium", "High"])
+Store_Location_City_Type = st.selectbox("Store Location City Type", ["Tier 1", "Tier 2", "Tier 3"])
+Store_Type = st.selectbox("Store Type", ["Supermarket Type1", "Supermarket Type2", "Supermarket Type3", "Departmental Store", "Food Mart"])
+Product_Id_char = st.selectbox("Product ID Character", ["FD", "DR", "NC"])
+Store_Age_Years = st.number_input("Store Age (Years)", min_value=0, value=16)
+Product_Type_Category = st.selectbox("Product Type Category", ["Perishables", "Non Perishables"])
+
+# Create JSON payload
+product_data = {
+    "Product_Weight": Product_Weight,
+    "Product_Sugar_Content": Product_Sugar_Content,
+    "Product_Allocated_Area": Product_Allocated_Area,
+    "Product_MRP": Product_MRP,
+    "Store_Size": Store_Size,
+    "Store_Location_City_Type": Store_Location_City_Type,
+    "Store_Type": Store_Type,
+    "Product_Id_char": Product_Id_char,
+    "Store_Age_Years": Store_Age_Years,
+    "Product_Type_Category": Product_Type_Category
+}
+
+# Single Prediction
+if st.button("Predict", type='primary'):
+
+    response = requests.post(
+        f"{BACKEND_URL}/v1/predict",
+        json=product_data
+    )
+
+    if response.status_code == 200:
+        result = response.json()
+        predicted_sales = result["Sales"]
+        st.success(f"Predicted Product Store Sales Total: ₹{predicted_sales:.2f}")
+    else:
+        st.error("Unable to connect to the prediction API.")
+
+# Batch Prediction
+st.subheader("Batch Prediction")
+
+uploaded_file = st.file_uploader(
+    "Upload a CSV file",
+    type=["csv"]
+)
+
+if uploaded_file is not None:
+
+    if st.button("Predict for Batch", type='primary'):
+
+        response = requests.post(
+            f"{BACKEND_URL}/v1/predictbatch",
+            files={"file": uploaded_file}
+        )
+
         if response.status_code == 200:
-            result = response.json()
-            st.success(f'Predicted Store Sales: **${result["prediction"]:.2f}**')
+            results = response.json()
+
+            st.success("Predictions completed successfully!")
+
+            try:
+                if isinstance(results, list):
+                    df = pd.DataFrame(results)
+                elif isinstance(results, dict):
+                    # Check if all values are scalars
+                    if all(not isinstance(v, (list, dict)) for v in results.values()):
+                        df = pd.DataFrame([results])
+                    else:
+                        df = pd.DataFrame(results)
+                else:
+                    df = pd.DataFrame({"Result": [results]})
+
+                st.dataframe(df, use_container_width=True)
+
+            except Exception as e:
+                st.error(f"Unable to display results as a table: {e}")
+                st.json(results)
+
         else:
-            st.error('Error contacting backend server.')
-    except Exception as e:
-        st.error(f'Error connection: {e}')
+            st.error("Unable to connect to the prediction API.")
